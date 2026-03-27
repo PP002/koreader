@@ -2,13 +2,12 @@
 
 Cangjie (倉頡) input method for Lua/KOReader.
 
-Uses 25 Cangjie radicals (A-Y) to input Chinese characters.
+Uses standard QWERTY keyboard layout with Cangjie radical labels.
+25 Cangjie radicals are mapped to keys A-Y following standard Cangjie layout.
 Supports both simplified and traditional Chinese.
 In-place candidates can be turned off in keyboard settings.
-A Separation key 分隔 is used to finish inputting a character.
-A Switch key 下一字 is used to iterate candidates.
-Stroke-wise deletion (input not finished) mapped to the default Del key.
-Character-wise deletion mapped to north of Separation key.
+Arrow keys are used to iterate candidates (→ next, ← previous).
+Space acts as separator to finish inputting a character.
 
 rf. https://en.wikipedia.org/wiki/Cangjie_input_method
 
@@ -18,23 +17,12 @@ local IME = require("ui/data/keyboardlayouts/generic_ime")
 local util = require("util")
 local _ = require("gettext")
 
-local SHOW_CANDI_KEY = "keyboard_cangjie_show_candidates"
-
-local genMenuItems = function(self)
-    return {
-        {
-            text = _("Show character candidates"),
-            checked_func = function()
-                return G_reader_settings:nilOrTrue(SHOW_CANDI_KEY)
-            end,
-            callback = function()
-                G_reader_settings:flipNilOrTrue(SHOW_CANDI_KEY)
-            end,
-        },
-    }
-end
+-- Start with the english keyboard layout
+local cj_keyboard = dofile("frontend/ui/data/keyboardlayouts/en_keyboard.lua")
+local SETTING_NAME = "keyboard_cangjie_settings"
 
 local code_map = dofile("frontend/ui/data/keyboardlayouts/cj_data.lua")
+local settings = G_reader_settings:readSetting(SETTING_NAME, {show_candi=true})
 local ime = IME:new{
     code_map = code_map,
     key_map = {
@@ -44,16 +32,135 @@ local ime = IME:new{
         ["P"] = "P", ["Q"] = "Q", ["R"] = "R", ["S"] = "S", ["T"] = "T",
         ["U"] = "U", ["V"] = "V", ["W"] = "W", ["X"] = "X", ["Y"] = "Y",
     },
+    partial_separators = {" "},
     show_candi_callback = function()
-        return G_reader_settings:nilOrTrue(SHOW_CANDI_KEY)
+        return settings.show_candi
     end,
-    separator = "分隔",
-    switch_char = "下一字",
+    switch_char = "→",
+    switch_char_prev = "←",
+    separator = " ",
     exact_match = true,
 }
 
+-- Cangjie radical labels for QWERTY keys (standard Cangjie mapping)
+-- Row 2: Q=手 W=田 E=水 R=口 T=廿 Y=卜 U=山 I=戈 O=人 P=心
+-- Row 3: A=日 S=尸 D=木 F=火 G=土 H=竹 J=十 K=大 L=中
+-- Row 4: Z=重 X=難 C=金 V=女 B=月 N=弓 M=一
+
+-- Override layer 2 (lowercase) keys with Cangjie radical labels
+-- Row 2 (keys[2]): Q W E R T Y U I O P
+cj_keyboard.keys[2][1][2] = { label = "手", "Q", alt_label = "Q" }
+cj_keyboard.keys[2][2][2] = { label = "田", "W", alt_label = "W" }
+cj_keyboard.keys[2][3][2] = { label = "水", "E", alt_label = "E" }
+cj_keyboard.keys[2][4][2] = { label = "口", "R", alt_label = "R" }
+cj_keyboard.keys[2][5][2] = { label = "廿", "T", alt_label = "T" }
+cj_keyboard.keys[2][6][2] = { label = "卜", "Y", alt_label = "Y" }
+cj_keyboard.keys[2][7][2] = { label = "山", "U", alt_label = "U" }
+cj_keyboard.keys[2][8][2] = { label = "戈", "I", alt_label = "I" }
+cj_keyboard.keys[2][9][2] = { label = "人", "O", alt_label = "O" }
+cj_keyboard.keys[2][10][2] = { label = "心", "P", alt_label = "P" }
+
+-- Row 3 (keys[3]): A S D F G H J K L
+cj_keyboard.keys[3][1][2] = { label = "日", "A", alt_label = "A" }
+cj_keyboard.keys[3][2][2] = { label = "尸", "S", alt_label = "S" }
+cj_keyboard.keys[3][3][2] = { label = "木", "D", alt_label = "D" }
+cj_keyboard.keys[3][4][2] = { label = "火", "F", alt_label = "F" }
+cj_keyboard.keys[3][5][2] = { label = "土", "G", alt_label = "G" }
+cj_keyboard.keys[3][6][2] = { label = "竹", "H", alt_label = "H" }
+cj_keyboard.keys[3][7][2] = { label = "十", "J", alt_label = "J" }
+cj_keyboard.keys[3][8][2] = { label = "大", "K", alt_label = "K" }
+cj_keyboard.keys[3][9][2] = { label = "中", "L", alt_label = "L" }
+
+-- Row 4 (keys[4]): Z X C V B N M
+cj_keyboard.keys[4][2][2] = { label = "重", "Z", alt_label = "Z" }
+cj_keyboard.keys[4][3][2] = { label = "難", "X", alt_label = "X" }
+cj_keyboard.keys[4][4][2] = { label = "金", "C", alt_label = "C" }
+cj_keyboard.keys[4][5][2] = { label = "女", "V", alt_label = "V" }
+cj_keyboard.keys[4][6][2] = { label = "月", "B", alt_label = "B" }
+cj_keyboard.keys[4][7][2] = { label = "弓", "N", alt_label = "N" }
+cj_keyboard.keys[4][8][2] = { label = "一", "M", alt_label = "M" }
+
+-- Chinese punctuation overrides (same approach as zh_CN_keyboard)
+cj_keyboard.keys[3][10][2] = {
+    "，",
+    north = "；",
+    alt_label = "；",
+    northeast = "（",
+    northwest = "\u{201c}",
+    east = "《",
+    west = "？",
+    south = ",",
+    southeast = "【",
+    southwest = "「",
+    "{",
+    "[",
+    ";"
+}
+
+cj_keyboard.keys[5][3][2] = {
+    "。",
+    north = "：",
+    alt_label = "：",
+    northeast = "）",
+    northwest = "\u{201d}",
+    east = "…",
+    west = "！",
+    south = ".",
+    southeast = "】",
+    southwest = "」",
+    "}",
+    "]",
+    ":"
+}
+cj_keyboard.keys[1][2][3] = { alt_label = "「", north = "「", "'" }
+cj_keyboard.keys[1][3][3] = { alt_label = "」", north = "」", "'" }
+cj_keyboard.keys[1][1][4] = { alt_label = "!", north = "!", "！"}
+cj_keyboard.keys[2][1][4] = { alt_label = "?", north = "?", "？"}
+cj_keyboard.keys[1][2][4] = "、"
+cj_keyboard.keys[2][2][4] = "——"
+cj_keyboard.keys[1][4][3] = { alt_label = "『", north = "『", "\u{201c}" }
+cj_keyboard.keys[1][5][3] = { alt_label = "』", north = "』", "\u{201d}" }
+cj_keyboard.keys[1][4][4] = { alt_label = "¥", north = "¥", "_" }
+cj_keyboard.keys[3][3][4] = "（"
+cj_keyboard.keys[3][4][4] = "）"
+cj_keyboard.keys[4][4][3] = "《"
+cj_keyboard.keys[4][5][3] = "》"
+
+local genMenuItems = function(self)
+    return {
+        {
+            text = _("Show character candidates"),
+            checked_func = function()
+                return settings.show_candi
+            end,
+            callback = function()
+                settings.show_candi = not settings.show_candi
+                G_reader_settings:saveSetting(SETTING_NAME, settings)
+            end
+        }
+    }
+end
+
 local wrappedAddChars = function(inputbox, char)
     ime:wrappedAddChars(inputbox, char)
+end
+
+local wrappedRightChar = function(inputbox)
+    if ime:hasCandidates() then
+        ime:wrappedAddChars(inputbox, "→")
+    else
+        ime:separate(inputbox)
+        inputbox.rightChar:raw_method_call()
+    end
+end
+
+local wrappedLeftChar = function(inputbox)
+    if ime:hasCandidates() then
+        ime:wrappedAddChars(inputbox, "←")
+    else
+        ime:separate(inputbox)
+        inputbox.leftChar:raw_method_call()
+    end
 end
 
 local function separate(inputbox)
@@ -74,30 +181,27 @@ local wrapInputBox = function(inputbox)
         local wrappers = {}
 
         -- Wrap all of the navigation and non-single-character-input keys with
-        -- a callback to clear the tap window, but pass through to the
+        -- a callback to finish (separate) the input status, but pass through to the
         -- original function.
 
         -- -- Delete text.
-        table.insert(wrappers, util.wrapMethod(inputbox, "delChar",          wrappedDelChar,   nil))
+        table.insert(wrappers, util.wrapMethod(inputbox, "delChar", wrappedDelChar, nil))
         table.insert(wrappers, util.wrapMethod(inputbox, "delToStartOfLine", nil, clear_stack))
-        table.insert(wrappers, util.wrapMethod(inputbox, "clear",            nil, clear_stack))
+        table.insert(wrappers, util.wrapMethod(inputbox, "clear", nil, clear_stack))
         -- -- Navigation.
-        table.insert(wrappers, util.wrapMethod(inputbox, "leftChar",  nil, separate))
-        table.insert(wrappers, util.wrapMethod(inputbox, "rightChar", nil, separate))
-        table.insert(wrappers, util.wrapMethod(inputbox, "upLine",    nil, separate))
-        table.insert(wrappers, util.wrapMethod(inputbox, "downLine",  nil, separate))
+        table.insert(wrappers, util.wrapMethod(inputbox, "upLine", nil, separate))
+        table.insert(wrappers, util.wrapMethod(inputbox, "downLine", nil, separate))
         -- -- Move to other input box.
-        table.insert(wrappers, util.wrapMethod(inputbox, "unfocus",         nil, separate))
+        table.insert(wrappers, util.wrapMethod(inputbox, "unfocus", nil, separate))
         table.insert(wrappers, util.wrapMethod(inputbox, "onCloseKeyboard", nil, separate))
         -- -- Gestures to move cursor.
-        table.insert(wrappers, util.wrapMethod(inputbox, "onTapTextBox",    nil, separate))
-        table.insert(wrappers, util.wrapMethod(inputbox, "onHoldTextBox",   nil, separate))
-        table.insert(wrappers, util.wrapMethod(inputbox, "onSwipeTextBox",  nil, separate))
-        -- -- Others
-        table.insert(wrappers, util.wrapMethod(inputbox, "onSwitchingKeyboardLayout", nil, separate))
+        table.insert(wrappers, util.wrapMethod(inputbox, "onTapTextBox", nil, separate))
+        table.insert(wrappers, util.wrapMethod(inputbox, "onHoldTextBox", nil, separate))
+        table.insert(wrappers, util.wrapMethod(inputbox, "onSwipeTextBox", nil, separate))
 
-        -- addChars is the only method we need a more complicated wrapper for.
         table.insert(wrappers, util.wrapMethod(inputbox, "addChars", wrappedAddChars, nil))
+        table.insert(wrappers, util.wrapMethod(inputbox, "leftChar", wrappedLeftChar, nil))
+        table.insert(wrappers, util.wrapMethod(inputbox, "rightChar", wrappedRightChar, nil))
 
         return function()
             if inputbox._cj_wrapped then
@@ -110,102 +214,7 @@ local wrapInputBox = function(inputbox)
     end
 end
 
--- Cangjie radicals and their corresponding keys:
--- 日(A) 月(B) 金(C) 木(D) 水(E) 火(F) 土(G) 竹(H) 戈(I) 十(J)
--- 大(K) 中(L) 一(M) 弓(N) 人(O) 心(P) 手(Q) 口(R) 尸(S) 廿(T)
--- 山(U) 女(V) 田(W) 難(X) 卜(Y)
-
-local comma_popup = { "，",
-    north = "；",
-    alt_label = "；",
-    northeast = "（",
-    northwest = "“",
-    east = "《",
-    west = "？",
-    south = ",",
-    southeast = "【",
-    southwest = "「",
-    "{",
-    "[",
-    ";",
-}
-local period_popup = { "。",
-    north = "：",
-    alt_label = "：",
-    northeast = "）",
-    northwest = "”",
-    east = "…",
-    west = "！",
-    south = ".",
-    southeast = "】",
-    southwest = "」",
-    "}",
-    "]",
-    ":",
-}
-
-return {
-    min_layer = 1,
-    max_layer = 4,
-    symbolmode_keys = {["123"] = true},
-    utf8mode_keys = {["🌐"] = true},
-    keys = {
-        -- first row [A-E]
-        {
-            { label = "123" },
-            { "", { label = "日", "A" }, "", "1" },
-            { "", { label = "月", "B" }, "", "2" },
-            { "", { label = "金", "C" }, "", "3" },
-            { "", { label = "木", "D" }, "", "4" },
-            { "", { label = "水", "E" }, "", "5" },
-            { label = "", bold = false }, -- backspace
-        },
-        -- second row [F-J]
-        {
-            { label = "←" },
-            { "", { label = "火", "F" }, "", "6" },
-            { "", { label = "土", "G" }, "", "7" },
-            { "", { label = "竹", "H" }, "", "8" },
-            { "", { label = "戈", "I" }, "", "9" },
-            { "", { label = "十", "J" }, "", "0" },
-            { label = "→" },
-        },
-        -- third row [K-O]
-        {
-            { label = "↑" },
-            { "", { label = "大", "K" }, "", { alt_label = "%°#", ".", west = "%", north = "°", east = "#" } },
-            { "", { label = "中", "L" }, "", { alt_label = "&-/", ",", west = "&", north = "-", east = "/" } },
-            { "", { label = "一", "M" }, "", { alt_label = "~+=", "?", west = "~", north = "+", east = "=" } },
-            { "", { label = "弓", "N" }, "", { alt_label = "'\":", "!", west = "'", north = "\"", east = ":" } },
-            { "", { label = "人", "O" }, "", { alt_label = "@$\\", ";", west = "@", north = "$", east = "\\" } },
-            { label = "↓" },
-        },
-        -- fourth row [P-T]
-        {
-            { "", { label = "心", "P" }, "", comma_popup },
-            { "", { label = "手", "Q" }, "", period_popup },
-            { "", { label = "口", "R" }, "", { alt_label = "「」", "—", west = "「", north = "」" } },
-            { "", { label = "尸", "S" }, "", { alt_label = "《》", "…", west = "《", north = "》" } },
-            { "", { label = "廿", "T" }, "", { alt_label = "【】", "·", west = "【", north = "】" } },
-        },
-        -- fifth row [U-Y + separator/switch]
-        {
-            { "", { label = "山", "U" }, "", { alt_label = "（）", "(", west = "（", north = "）" } },
-            { "", { label = "女", "V" }, "", { alt_label = "{}|", ")", west = "{", north = "}", east = "|" } },
-            { "", { label = "田", "W" }, "", { alt_label = "「」", "[", west = "「", north = "」" } },
-            { "", { label = "難", "X" }, "", { alt_label = "『』", "]", west = "『", north = "』" } },
-            { "", { label = "卜", "Y" }, "", { alt_label = "<>^", "_", west = "<", north = ">", east = "^" } },
-        },
-        -- sixth row
-        {
-            { label = "🌐" },
-            { "", { ime.separator, north=ime.local_del, alt_label=ime.local_del }, "", " " },
-            { label = "空格", " ", " ", " ", " ", width = 2.0 },
-            { "", ime.switch_char, "", " " },
-            { label = "⮠", "\n", "\n", "\n", "\n", bold = true }, -- return
-        },
-    },
-
-    wrapInputBox = wrapInputBox,
-    genMenuItems = genMenuItems,
-}
+cj_keyboard.wrapInputBox = wrapInputBox
+cj_keyboard.genMenuItems = genMenuItems
+cj_keyboard.keys[5][4].label = "空格"
+return cj_keyboard
