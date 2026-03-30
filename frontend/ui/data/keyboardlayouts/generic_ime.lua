@@ -251,6 +251,9 @@ function IME:getHintChars()
             end
         end
     end
+    if #_stack == 0 then
+        return hint_chars
+    end
     local imex = _stack[#_stack]
     local has_wildcard = self.W and imex.code:find(self.W)
     -- 顯示當前輸入的編碼（如果尚未確認）
