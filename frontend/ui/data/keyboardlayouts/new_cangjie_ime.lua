@@ -38,6 +38,27 @@ function CangjieIME:clear_stack()
     self.hint_char_count = 0
 end
 
+-- 獲取編碼的顯示形式（將每個字母轉換為對應的倉頡字符）
+function CangjieIME:get_code_display(code)
+    if not code or code == "" then return "" end
+    
+    local display = ""
+    for i = 1, #code do
+        local letter = code:sub(i, i)
+        local char = self.code_map and self.code_map[letter]
+        
+        if type(char) == "string" then
+            display = display .. char
+        elseif type(char) == "table" and #char > 0 then
+            display = display .. char[1]
+        else
+            display = display .. letter
+        end
+    end
+    
+    return display
+end
+
 function CangjieIME:get_candidates(code)
     if not self.code_map then return {} end
     local cand = self.code_map[code]
@@ -66,10 +87,11 @@ function CangjieIME:get_hint_chars()
     
     local imex = self.stack[#self.stack]
     
-    -- 顯示當前輸入的編碼
+    -- 顯示當前輸入的編碼（使用倉頡字符表示）
     if not imex.confirmed and imex.code ~= "" then
-        hint_chars = hint_chars .. "[" .. imex.code .. "]"
-        self.hint_char_count = #imex.code + 2
+        local code_display = self:get_code_display(imex.code)
+        hint_chars = hint_chars .. "[" .. code_display .. "]"
+        self.hint_char_count = #code_display + 2
     end
     
     -- 顯示候選字（帶數字標籤）
