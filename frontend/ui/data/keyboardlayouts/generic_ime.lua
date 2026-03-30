@@ -47,7 +47,7 @@ local function stringReplaceAt(str, pos, r)
     return str:sub(1, pos-1) .. r .. str:sub(pos+1)
 end
 
-local _stack
+local _stack = {}
 local IME = {
     code_map = nil, -- hash, mandatory
     key_map = nil, -- input key to code map
@@ -77,10 +77,12 @@ function IME:init()
     self:clear_stack()
 
     self.sorted_codes = {}
-    for k,_ in pairs(self.code_map) do
-        table.insert(self.sorted_codes, k)
+    if self.code_map then
+        for k,_ in pairs(self.code_map) do
+            table.insert(self.sorted_codes, k)
+        end
+        table.sort(self.sorted_codes)
     end
-    table.sort(self.sorted_codes)
 
     if not self.key_map and self.keys_string then
         self.key_map = {}
@@ -236,6 +238,7 @@ function IME:delOnStageAndHintChars(inputbox)
 end
 
 function IME:getHintChars()
+    if not _stack then return "" end
     self.hint_char_count = 0
     self.on_stage_char_count = 0
     local hint_chars = ""
