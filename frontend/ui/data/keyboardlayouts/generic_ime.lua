@@ -336,10 +336,16 @@ function IME:tweak_case(new_candi, old_imex, new_stroke_upper)
 end
 
 function IME:hasCandidates()
+    if not _stack or #_stack == 0 or not _stack[#_stack] then
+        return false
+    end
     return #(_stack[#_stack].candi) > 0
 end
 
 function IME:wrappedDelChar(inputbox)
+    if not _stack or #_stack == 0 then
+        self:clear_stack()
+    end
     local imex = _stack[#_stack]
     -- stepped deletion
     if #imex.code > 1 then
@@ -365,6 +371,9 @@ function IME:wrappedDelChar(inputbox)
 end
 
 function IME:wrappedAddChars(inputbox, char, orig_char)
+    if not _stack or #_stack == 0 then
+        self:clear_stack()
+    end
     local imex = _stack[#_stack]
     -- 數字鍵選擇候選字
     if char >= "1" and char <= "9" and #imex.candi > 0 then
