@@ -102,7 +102,7 @@ function IME:init()
 end
 
 function IME:clear_stack()
-    _stack = { {code="", char="", index=1, candi={} } }
+    _stack = { {code="", char="", index=1, candi={}, confirmed=false } }
     self.last_key = ""
     self.last_index = 0
     self.hint_char_count = 0
@@ -239,14 +239,22 @@ function IME:getHintChars()
     self.hint_char_count = 0
     self.on_stage_char_count = 0
     local hint_chars = ""
+    -- 只添加已確認的字符到 hint_chars 和 on_stage_char_count
     for i=1, #_stack do
-        hint_chars = hint_chars .. _stack[i].char
-        if _stack[i].char ~= "" then
-            self.on_stage_char_count = self.on_stage_char_count + #util.splitToChars(_stack[i].char)
+        if _stack[i].confirmed then
+            hint_chars = hint_chars .. _stack[i].char
+            if _stack[i].char ~= "" then
+                self.on_stage_char_count = self.on_stage_char_count + #util.splitToChars(_stack[i].char)
+            end
         end
     end
     local imex = _stack[#_stack]
     local has_wildcard = self.W and imex.code:find(self.W)
+    -- 顯示當前輸入的編碼（如果尚未確認）
+    if not imex.confirmed and imex.code ~= "" then
+        hint_chars = hint_chars .. "[" .. imex.code .. "]"
+        self.hint_char_count = self.hint_char_count + #imex.code + 2
+    end
     if self:show_candi_callback() and -- shows candidates
         #imex.candi ~= 0 and -- has candidates
         ( #imex.code > 1 or imex.index > 1 ) and -- more than one key
@@ -261,17 +269,23 @@ function IME:getHintChars()
             end
             local pos = remainder == 0 and #imex.candi or remainder
             if not (has_wildcard and pos == 1) then
-                for i=1, math.min(#imex.candi-1, 5) do
-                    hint_chars = hint_chars .. imex.candi[pos]
-                    self.hint_char_count = self.hint_char_count + #util.splitToChars(imex.candi[pos])
+                local max_candidates = math.min(#imex.candi-1, 9) -- 最多顯示9個候選字用於數字鍵選擇
+                for i=1, max_candidates do
+                    -- 添加數字標籤，例如 "1.候選字"
+                    hint_chars = hint_chars .. tostring(i) .. "." .. imex.candi[pos]
+                    self.hint_char_count = self.hint_char_count + #util.splitToChars(imex.candi[pos]) + 2 -- 數字和點號
                     pos = pos == #imex.candi and 1 or pos+1
                     if has_wildcard and pos == 1 then
                         break
                     end
+                    if i < max_candidates then
+                        hint_chars = hint_chars .. " "
+                        self.hint_char_count = self.hint_char_count + 1
+                    end
                 end
             end
         end
-        if #imex.candi > 6 or has_wildcard then
+        if #imex.candi > 10 or has_wildcard then
             hint_chars = hint_chars .. "…"
             self.hint_char_count = self.hint_char_count + 1
         end
@@ -349,6 +363,16 @@ end
 
 function IME:wrappedAddChars(inputbox, char, orig_char)
     local imex = _stack[#_stack]
+    -- 數字鍵選擇候選字
+    if char >= "1" and char <= "9" and #imex.candi > 0 then
+        local idx = tonumber(char)
+        if idx <= #imex.candi then
+            imex.char = imex.candi[idx]
+            self:separate(inputbox)
+            inputbox.addChars:raw_method_call(imex.char)
+            return
+        end
+    end
     if char == self.switch_char then
         imex.index = imex.index + 1
         if self.W and imex.code:find(self.W) then
@@ -388,6 +412,12 @@ function IME:wrappedAddChars(inputbox, char, orig_char)
         self:refreshHintChars(inputbox)
     elseif char == self.separator or
         _stack[1].code ~= "" and self.partial_separators and util.arrayContains(self.partial_separators, char) then
+            -- 空格確認：插入當前候選字（如果存在），否則插入空格
+            if imex.char and imex.char ~= "" then
+                inputbox.addChars:raw_method_call(imex.char)
+            else
+                inputbox.addChars:raw_method_call(char)
+            end
             self:separate(inputbox)
             return
     elseif char == self.local_del then
@@ -431,9 +461,9 @@ function IME:wrappedAddChars(inputbox, char, orig_char)
                 self:tweak_case(new_candi, {}, orig_char and orig_char ~= char)
 
                 if self.auto_separate_callback() then
-                    _stack[1] = { code=key, index=1, char=new_candi[1] or "", candi=new_candi }
+                    _stack[1] = { code=key, index=1, char=new_candi[1] or "", candi=new_candi, confirmed=false }
                 else
-                    table.insert(_stack, {code=key, index=1, char=new_candi[1] or "", candi=new_candi} )
+                    table.insert(_stack, {code=key, index=1, char=new_candi[1] or "", candi=new_candi, confirmed=false} )
                 end
                 self:refreshHintChars(inputbox)
             end
