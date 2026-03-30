@@ -200,6 +200,7 @@ function IME:getCandiWithWildcard(code, from_reset)
 end
 
 function IME:getCandidates(code)
+    if not _stack then return nil end
     logger.dbg("zh_kbd: getCandidates", code)
     if self.W then
         local wildcard_count = select(2, string.gsub(code, self.W, ""))
@@ -208,6 +209,7 @@ function IME:getCandidates(code)
             return
         elseif wildcard_count ~= 0 then
             if #code == #self.last_key then -- only index change, no new stroke
+                if #_stack == 0 then return nil end
                 local last_candi = _stack[#_stack].candi
                 return self:getCandiWithWildcard(code), last_candi
             else
