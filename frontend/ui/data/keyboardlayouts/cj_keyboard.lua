@@ -1,19 +1,17 @@
 --[[--
 
-Cangjie (倉頡) input method for Lua/KOReader.
+RIME-style Cangjie (倉頡) input method for Lua/KOReader.
 
-Uses standard QWERTY keyboard layout with Cangjie radical labels.
-25 Cangjie radicals are mapped to keys A-Y following standard Cangjie layout.
-Supports both simplified and traditional Chinese.
-In-place candidates can be turned off in keyboard settings.
-Arrow keys are used to iterate candidates (→ next, ← previous).
-Space acts as separator to finish inputting a character.
-
-rf. https://en.wikipedia.org/wiki/Cangjie_input_method
+Features:
+1. Shows Cangjie code after cursor while typing
+2. No auto-commit, space key to confirm current candidate
+3. Candidates displayed below cursor with number labels (1-9)
+4. Number keys 1-9 to select candidates
+5. Allows continuous input (no need to finish one character before starting next)
 
 --]]
 
-local IME = require("ui/data/keyboardlayouts/generic_ime")
+local NewCangjieIME = require("ui/data/keyboardlayouts/new_cangjie_ime")
 local util = require("util")
 local _ = require("gettext")
 
@@ -23,7 +21,8 @@ local SETTING_NAME = "keyboard_cangjie_settings"
 
 local code_map = dofile("frontend/ui/data/keyboardlayouts/cj_data.lua")
 local settings = G_reader_settings:readSetting(SETTING_NAME, {show_candi=true})
-local ime = IME:new{
+
+local ime = NewCangjieIME:new{
     code_map = code_map,
     key_map = {
         ["A"] = "A", ["B"] = "B", ["C"] = "C", ["D"] = "D", ["E"] = "E",
@@ -32,14 +31,8 @@ local ime = IME:new{
         ["P"] = "P", ["Q"] = "Q", ["R"] = "R", ["S"] = "S", ["T"] = "T",
         ["U"] = "U", ["V"] = "V", ["W"] = "W", ["X"] = "X", ["Y"] = "Y",
     },
-    partial_separators = {" "},
-    show_candi_callback = function()
-        return settings.show_candi
-    end,
-    switch_char = "→",
-    switch_char_prev = "←",
-    separator = " ",
-    exact_match = true,
+    show_candidates = settings.show_candi,
+    auto_confirm = false,
 }
 
 -- Cangjie radical labels for QWERTY keys (standard Cangjie mapping)
@@ -48,6 +41,7 @@ local ime = IME:new{
 -- Row 4: Z=重 X=難 C=金 V=女 B=月 N=弓 M=一
 
 -- Override layer 2 (lowercase) keys with Cangjie radical labels
+
 -- Row 2 (keys[2]): Q W E R T Y U I O P
 cj_keyboard.keys[2][1][2] = { label = "手", "Q", alt_label = "Q" }
 cj_keyboard.keys[2][2][2] = { label = "田", "W", alt_label = "W" }
@@ -88,133 +82,89 @@ cj_keyboard.keys[3][10][2] = {
     northeast = "（",
     northwest = "\u{201c}",
     east = "《",
-    west = "？",
-    south = ",",
-    southeast = "【",
-    southwest = "「",
-    "{",
-    "[",
-    ";"
+    southeast = "「",
+    south = "、",
+    southwest = "」",
+    west = "》",
 }
-
-cj_keyboard.keys[5][3][2] = {
+cj_keyboard.keys[3][10][3] = {
     "。",
     north = "：",
     alt_label = "：",
     northeast = "）",
     northwest = "\u{201d}",
-    east = "…",
-    west = "！",
-    south = ".",
-    southeast = "】",
-    southwest = "」",
-    "}",
-    "]",
-    ":"
+    east = "〉",
+    southeast = "『",
+    south = "·",
+    southwest = "』",
+    west = "〈",
 }
-cj_keyboard.keys[1][2][3] = { alt_label = "「", north = "「", "'" }
-cj_keyboard.keys[1][3][3] = { alt_label = "」", north = "」", "'" }
-cj_keyboard.keys[1][1][4] = { alt_label = "!", north = "!", "！"}
-cj_keyboard.keys[2][1][4] = { alt_label = "?", north = "?", "？"}
-cj_keyboard.keys[1][2][4] = "、"
-cj_keyboard.keys[2][2][4] = "——"
-cj_keyboard.keys[1][4][3] = { alt_label = "『", north = "『", "\u{201c}" }
-cj_keyboard.keys[1][5][3] = { alt_label = "』", north = "』", "\u{201d}" }
-cj_keyboard.keys[1][4][4] = { alt_label = "¥", north = "¥", "_" }
-cj_keyboard.keys[3][3][4] = "（"
-cj_keyboard.keys[3][4][4] = "）"
-cj_keyboard.keys[4][4][3] = "《"
-cj_keyboard.keys[4][5][3] = "》"
 
-local genMenuItems = function(self)
-    return {
-        {
-            text = _("Show character candidates"),
-            checked_func = function()
-                return settings.show_candi
-            end,
-            callback = function()
-                settings.show_candi = not settings.show_candi
-                G_reader_settings:saveSetting(SETTING_NAME, settings)
-            end
-        }
+-- Override the Enter key with Cangjie-specific behavior
+if cj_keyboard.keys[4][10] then
+    cj_keyboard.keys[4][10][2] = {
+        "\n",
+        north = "\n",
+        alt_label = _("Confirm"),
     }
 end
 
-local wrappedAddChars = function(inputbox, char)
-    ime:wrappedAddChars(inputbox, char)
+-- Override the Space key for candidate confirmation
+if cj_keyboard.keys[4][4] then
+    cj_keyboard.keys[4][4][3] = {
+        " ",
+        alt_label = _("Confirm"),
+    }
+end
+
+-- The main wrapper function that replaces inputbox.addChars
+local wrappedAddChars = function(inputbox, char, orig_char)
+    return ime:handle_input(inputbox, char, orig_char)
+end
+
+local wrappedDelChar = function(inputbox)
+    -- Handle delete with IME
+    ime:handle_input(inputbox, "") -- local_del character
 end
 
 local wrappedRightChar = function(inputbox)
-    if ime:hasCandidates() then
-        ime:wrappedAddChars(inputbox, "→")
-    else
-        ime:separate(inputbox)
-        inputbox.rightChar:raw_method_call()
-    end
+    -- Right arrow for next candidate
+    ime:handle_input(inputbox, "→")
 end
 
 local wrappedLeftChar = function(inputbox)
-    if ime:hasCandidates() then
-        ime:wrappedAddChars(inputbox, "←")
-    else
-        ime:separate(inputbox)
-        inputbox.leftChar:raw_method_call()
-    end
+    -- Left arrow for previous candidate
+    ime:handle_input(inputbox, "←")
 end
 
-local function separate(inputbox)
-    ime:separate(inputbox)
-end
-
-local function wrappedDelChar(inputbox)
-    ime:wrappedDelChar(inputbox)
-end
-
+-- Clear IME state on certain operations
 local function clear_stack()
     ime:clear_stack()
 end
 
-local wrapInputBox = function(inputbox)
-    if inputbox._cj_wrapped == nil then
-        inputbox._cj_wrapped = true
-        local wrappers = {}
-
-        -- Wrap all of the navigation and non-single-character-input keys with
-        -- a callback to finish (separate) the input status, but pass through to the
-        -- original function.
-
-        -- -- Delete text.
-        table.insert(wrappers, util.wrapMethod(inputbox, "delChar", wrappedDelChar, nil))
-        table.insert(wrappers, util.wrapMethod(inputbox, "delToStartOfLine", nil, clear_stack))
-        table.insert(wrappers, util.wrapMethod(inputbox, "clear", nil, clear_stack))
-        -- -- Navigation.
-        table.insert(wrappers, util.wrapMethod(inputbox, "upLine", nil, separate))
-        table.insert(wrappers, util.wrapMethod(inputbox, "downLine", nil, separate))
-        -- -- Move to other input box.
-        table.insert(wrappers, util.wrapMethod(inputbox, "unfocus", nil, separate))
-        table.insert(wrappers, util.wrapMethod(inputbox, "onCloseKeyboard", nil, separate))
-        -- -- Gestures to move cursor.
-        table.insert(wrappers, util.wrapMethod(inputbox, "onTapTextBox", nil, separate))
-        table.insert(wrappers, util.wrapMethod(inputbox, "onHoldTextBox", nil, separate))
-        table.insert(wrappers, util.wrapMethod(inputbox, "onSwipeTextBox", nil, separate))
-
-        table.insert(wrappers, util.wrapMethod(inputbox, "addChars", wrappedAddChars, nil))
-        table.insert(wrappers, util.wrapMethod(inputbox, "leftChar", wrappedLeftChar, nil))
-        table.insert(wrappers, util.wrapMethod(inputbox, "rightChar", wrappedRightChar, nil))
-
-        return function()
-            if inputbox._cj_wrapped then
-                for _, wrapper in ipairs(wrappers) do
-                    wrapper:revert()
-                end
-                inputbox._cj_wrapped = nil
-            end
-        end
-    end
+-- Keyboard activation: wrap input methods
+local wrappers = {}
+function cj_keyboard.activate(inputbox)
+    -- Clear IME state when activating keyboard
+    clear_stack()
+    
+    -- Wrap input methods
+    table.insert(wrappers, util.wrapMethod(inputbox, "addChars", wrappedAddChars, nil))
+    table.insert(wrappers, util.wrapMethod(inputbox, "delChar", nil, wrappedDelChar))
+    table.insert(wrappers, util.wrapMethod(inputbox, "rightChar", nil, wrappedRightChar))
+    table.insert(wrappers, util.wrapMethod(inputbox, "leftChar", nil, wrappedLeftChar))
+    table.insert(wrappers, util.wrapMethod(inputbox, "delToStartOfLine", nil, clear_stack))
+    table.insert(wrappers, util.wrapMethod(inputbox, "clear", nil, clear_stack))
 end
 
-cj_keyboard.wrapInputBox = wrapInputBox
-cj_keyboard.genMenuItems = genMenuItems
-cj_keyboard.keys[5][4].label = "空格"
+-- Keyboard deactivation: remove wrappers
+function cj_keyboard.deactivate()
+    for _, wrapper in ipairs(wrappers) do
+        wrapper:remove()
+    end
+    wrappers = {}
+    clear_stack()
+end
+
+-- Return the keyboard layout
 return cj_keyboard
