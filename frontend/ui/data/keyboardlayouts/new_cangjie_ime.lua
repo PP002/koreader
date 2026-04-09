@@ -78,35 +78,57 @@ end
 -- ── Maximum-matching segmentation ───────────────────────────────────────────
 
 -- Split buf into segments using forward maximum matching.
--- Each segment: {code=str, cands=table, chosen=int (1-based)}
--- Segments with no dictionary match have cands={} and chosen=1.
--- Only called via ensure_segments(); never called on every keystroke.
+--
+-- Each segment: {code=str, cands=list, chosen=int}
+--
+--   code   : the LONGEST prefix that has any dictionary match; drives
+--             buf-advancement so commit_all splits the buffer correctly.
+--
+--   cands  : a flat list of {char=str, code=str} entries ordered by
+--             DESCENDING code length (longest first).
+--             • cands[1]  = first char of the LONGEST match  → default
+--               for commit_all (space) so 連打 produces the most-complete
+--               characters (e.g. 明 from "AB", not 日 from "A").
+--             • cands[2+] = chars from progressively shorter codes, so
+--               short-code characters (e.g. 下 from "MY") are never
+--               filtered out and remain reachable via number keys.
+--
+--   chosen : 1-based index into cands; default = 1 (longest-match char).
+--
+-- Segments with no dictionary match at any length have cands={}.
+-- Only called via ensure_segments(); never on every keystroke.
 function CangjieIME:do_segment(buf)
     local result = {}
     local pos    = 1
     local len    = #buf
     while pos <= len do
-        local matched_code  = nil
-        local matched_cands = nil
-        -- Try longest match first (MAX_CODE_LEN down to 1)
+        local max_code = nil   -- first hit when scanning longest-first
+        local combined = {}    -- {char, code} pairs, longest-code first
+
+        -- Scan MAX_CODE_LEN → 1 so that the first hit recorded is the
+        -- longest match and therefore lands at cands[1].
         for seg_len = math.min(MAX_CODE_LEN, len - pos + 1), 1, -1 do
             local code  = buf:sub(pos, pos + seg_len - 1)
             local cands = self:get_candidates(code)
             if #cands > 0 then
-                matched_code  = code
-                matched_cands = cands
-                break
+                if not max_code then
+                    max_code = code   -- longest match (first hit)
+                end
+                for _, ch in ipairs(cands) do
+                    table.insert(combined, {char = ch, code = code})
+                end
             end
         end
-        if matched_code then
+
+        if max_code then
             table.insert(result, {
-                code   = matched_code,
-                cands  = matched_cands,
+                code   = max_code,
+                cands  = combined,
                 chosen = 1,
             })
-            pos = pos + #matched_code
+            pos = pos + #max_code
         else
-            -- Unmatched single key: include with empty cands so display is intact
+            -- No match at any length: advance one key, keep for display only
             table.insert(result, {
                 code   = buf:sub(pos, pos),
                 cands  = {},
@@ -162,7 +184,8 @@ function CangjieIME:build_hint()
     -- ── Predicted-phrase prefix (only when ≥2 segments) ──
     if #segs > 1 then
         for _, seg in ipairs(segs) do
-            local ch = (seg.cands[seg.chosen] or "?")
+            local entry = seg.cands[seg.chosen]
+            local ch    = (entry and entry.char) or "?"
             push(ch)
         end
         push(" ")   -- space separating phrase from first-segment detail
@@ -172,13 +195,13 @@ function CangjieIME:build_hint()
     local first = segs[1] or {code="", cands={}, chosen=1}
     push(self:code_to_radicals(first.code))
 
-    -- ── First-segment candidates ──
+    -- ── First-segment candidates (all prefix lengths, shortest first) ──
     if self.show_candidates and #first.cands > 0 then
         push("\xc2\xb7")   -- U+00B7 · (middle dot)
         local limit = math.min(#first.cands, self.max_candidates)
         for i = 1, limit do
             push(tostring(i))
-            push(first.cands[i])
+            push(first.cands[i].char)
         end
         if #first.cands > self.max_candidates then
             push("\xe2\x80\xa6")  -- U+2026 …
@@ -213,15 +236,17 @@ function CangjieIME:separate(inputbox)
 end
 
 -- Assemble and commit the complete phrase produced by segmentation.
--- Called by the space handler.
+-- Each segment contributes its chosen candidate's char; unmatched segments
+-- (cands={}) are silently dropped.  Called by the space handler.
 function CangjieIME:commit_all(inputbox)
     self:ensure_segments()
     local assembled = {}
     for _, seg in ipairs(self.segments) do
-        if #seg.cands > 0 then
-            table.insert(assembled, seg.cands[seg.chosen])
+        local entry = seg.cands[seg.chosen]
+        if entry then
+            table.insert(assembled, entry.char)
         end
-        -- Unmatched segments are silently dropped
+        -- Unmatched segments (entry==nil) are silently dropped
     end
     local phrase = table.concat(assembled)
     -- Remove hint
@@ -236,15 +261,19 @@ end
 
 -- Confirm candidate idx for the FIRST segment only, then retain the rest
 -- of the buffer so the user can continue correcting or commit later.
+-- Because cands is sorted shortest-code-first, picking a short-code candidate
+-- (e.g. 下 from "MY") correctly retains the buffer tail that follows "MY",
+-- not the longer max-match code's tail.
 function CangjieIME:commit_first_segment(inputbox, idx)
     self:ensure_segments()
     local first = self.segments and self.segments[1]
     if not first or #first.cands == 0 then return false end
     idx = idx or first.chosen
-    local ch = first.cands[idx]
-    if not ch then return false end
+    local entry = first.cands[idx]
+    if not entry then return false end
 
-    local remaining = self.buf:sub(#first.code + 1)
+    local ch        = entry.char
+    local remaining = self.buf:sub(#entry.code + 1)  -- advance only chosen code's length
 
     -- Remove hint
     for _ = 1, self.hint_char_count do
